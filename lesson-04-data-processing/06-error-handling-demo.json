@@ -1,0 +1,73 @@
+{
+  "name": "PEn04 — 06. Retry On Fail и Error Output (демо)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a440fd00-0000-4000-8000-000000000001",
+      "name": "Запуск вручную",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-520, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {json:{id:1,name:'Анна',simulateError:false}},\n  {json:{id:2,name:'Борис',simulateError:true}},\n  {json:{id:3,name:'Вера',simulateError:false}}\n];"
+      },
+      "id": "a440fd00-0000-4000-8000-000000000002",
+      "name": "Тестовые сообщения",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json.simulateError) {\n  throw new Error(`Демо-ошибка отправки для клиента ${$json.id}`);\n}\nreturn {json:{...$json,deliveryStatus:'sent'}};"
+      },
+      "id": "a440fd00-0000-4000-8000-000000000003",
+      "name": "Отправка сообщения (демо)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {"assignments": [{"id":"ok1","name":"result","value":"Успешно обработано","type":"string"}]},
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a440fd00-0000-4000-8000-000000000004",
+      "name": "Успешные items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, -100]
+    },
+    {
+      "parameters": {
+        "assignments": {"assignments": [{"id":"er1","name":"result","value":"Передать в итоговое уведомление об ошибках","type":"string"}]},
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a440fd00-0000-4000-8000-000000000005",
+      "name": "Ошибочные items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 100]
+    }
+  ],
+  "connections": {
+    "Запуск вручную": {"main": [[{"node":"Тестовые сообщения","type":"main","index":0}]]},
+    "Тестовые сообщения": {"main": [[{"node":"Отправка сообщения (демо)","type":"main","index":0}]]},
+    "Отправка сообщения (демо)": {"main": [[{"node":"Успешные items","type":"main","index":0}],[{"node":"Ошибочные items","type":"main","index":0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "a440fd00-0000-4000-8000-00000000ffff",
+  "meta": {"templateCredsSetupCompleted": true},
+  "tags": []
+}

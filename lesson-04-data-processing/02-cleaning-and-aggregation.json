@@ -1,0 +1,70 @@
+{
+  "name": "PEn04 — 02. Очистка, сортировка и агрегация",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e001",
+      "name": "Запуск вручную",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-760, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {json:{id:1,city:'Москва',amount:1200}},\n  {json:{id:2,city:'Казань',amount:850}},\n  {json:{id:1,city:'Москва',amount:1200}},\n  {json:{id:3,city:'Москва',amount:2100}},\n  {json:{id:4,city:'Казань',amount:400}},\n  {json:{id:5,city:'Самара',amount:1600}}\n];"
+      },
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e002",
+      "name": "Тестовый набор",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-540, 0]
+    },
+    {
+      "parameters": {"compare": "selectedFields", "fieldsToCompare": "id", "options": {}},
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e003",
+      "name": "Remove Duplicates",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {"sortFieldsUi": {"sortField": [{"fieldName": "amount", "order": "descending"}]}},
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e004",
+      "name": "Sort — по сумме",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [-60, 0]
+    },
+    {
+      "parameters": {"maxItems": 4},
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e005",
+      "name": "Limit — топ 4",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [180, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(i => i.json);\nconst byCity = {};\nfor (const row of rows) {\n  byCity[row.city] ??= {city: row.city, count: 0, total: 0};\n  byCity[row.city].count += 1;\n  byCity[row.city].total += row.amount;\n}\nreturn Object.values(byCity).map(json => ({json}));"
+      },
+      "id": "6c18bd00-9a20-45d0-8eb0-1f450c21e006",
+      "name": "Aggregate + Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 0]
+    }
+  ],
+  "connections": {
+    "Запуск вручную": {"main": [[{"node": "Тестовый набор", "type": "main", "index": 0}]]},
+    "Тестовый набор": {"main": [[{"node": "Remove Duplicates", "type": "main", "index": 0}]]},
+    "Remove Duplicates": {"main": [[{"node": "Sort — по сумме", "type": "main", "index": 0}]]},
+    "Sort — по сумме": {"main": [[{"node": "Limit — топ 4", "type": "main", "index": 0}]]},
+    "Limit — топ 4": {"main": [[{"node": "Aggregate + Summarize", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "6c18bd00-9a20-45d0-8eb0-1f450c21efff",
+  "meta": {"templateCredsSetupCompleted": true},
+  "tags": []
+}

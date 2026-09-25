@@ -1,0 +1,12 @@
+{
+  "clients": [
+    {"id": 1, "name": "Анна", "city": "Москва", "phone": "+7 900 000-00-01", "status": "new"},
+    {"id": 2, "name": "Борис", "city": "Казань", "phone": "+7 900 000-00-02", "status": "active"},
+    {"id": 3, "name": "Вера", "city": "Самара", "phone": "", "status": "new"},
+    {"id": 4, "name": "Глеб", "city": "Москва", "phone": "+7 900 000-00-04", "status": "blocked"},
+    {"id": 5, "name": "Дарья", "city": "Омск", "phone": "+7 900 000-00-05", "status": "active"},
+    {"id": 6, "name": "Егор", "city": "Пермь", "phone": null, "status": "new"},
+    {"id": 7, "name": "Жанна", "city": "Тула", "phone": "+7 900 000-00-07", "status": "new"},
+    {"id": 8, "name": "Илья", "city": "Москва", "phone": "+7 900 000-00-08", "status": "unknown"}
+  ]
+}

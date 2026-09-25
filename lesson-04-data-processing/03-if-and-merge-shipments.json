@@ -1,0 +1,27 @@
+{
+  "name": "PEn04 — 03. IF и повторное объединение отправлений",
+  "nodes": [
+    {"parameters": {}, "id": "7110fd00-0000-4000-8000-000000000001", "name": "Запуск вручную", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [-760, 0]},
+    {"parameters": {"assignments": {"assignments": [{"id":"a1","name":"id","value":"S-001","type":"string"},{"id":"a2","name":"type","value":"letter","type":"string"},{"id":"a3","name":"destination","value":"London","type":"string"},{"id":"a4","name":"isFragile","value":false,"type":"boolean"}]},"options":{}}, "id": "7110fd00-0000-4000-8000-000000000002", "name": "Отправление 1", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [-520, -220]},
+    {"parameters": {"assignments": {"assignments": [{"id":"b1","name":"id","value":"S-002","type":"string"},{"id":"b2","name":"type","value":"parcel","type":"string"},{"id":"b3","name":"destination","value":"Tokyo","type":"string"},{"id":"b4","name":"isFragile","value":true,"type":"boolean"}]},"options":{}}, "id": "7110fd00-0000-4000-8000-000000000003", "name": "Отправление 2", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [-520, 0]},
+    {"parameters": {"assignments": {"assignments": [{"id":"c1","name":"id","value":"S-003","type":"string"},{"id":"c2","name":"type","value":"letter","type":"string"},{"id":"c3","name":"destination","value":"New York","type":"string"},{"id":"c4","name":"isFragile","value":false,"type":"boolean"}]},"options":{}}, "id": "7110fd00-0000-4000-8000-000000000004", "name": "Отправление 3", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [-520, 220]},
+    {"parameters": {"mode":"append"}, "id": "7110fd00-0000-4000-8000-000000000005", "name": "Merge 1+2", "type": "n8n-nodes-base.merge", "typeVersion": 3.2, "position": [-260, -100]},
+    {"parameters": {"mode":"append"}, "id": "7110fd00-0000-4000-8000-000000000006", "name": "Merge +3", "type": "n8n-nodes-base.merge", "typeVersion": 3.2, "position": [-40, 0]},
+    {"parameters": {"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"id":"if1","leftValue":"={{ $json.isFragile }}","rightValue":true,"operator":{"type":"boolean","operation":"true","singleValue":true}}],"combinator":"and"},"options":{}}, "id": "7110fd00-0000-4000-8000-000000000007", "name": "IF — хрупкое?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [200, 0]},
+    {"parameters": {"assignments":{"assignments":[{"id":"t1","name":"handlingInstruction","value":"Бережная перевозка: не кантовать","type":"string"}]},"includeOtherFields":true,"options":{}}, "id": "7110fd00-0000-4000-8000-000000000008", "name": "Бережная перевозка", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [440, -120]},
+    {"parameters": {"assignments":{"assignments":[{"id":"f1","name":"handlingInstruction","value":"Стандартная перевозка","type":"string"}]},"includeOtherFields":true,"options":{}}, "id": "7110fd00-0000-4000-8000-000000000009", "name": "Стандартная перевозка", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [440, 120]},
+    {"parameters": {"mode":"append"}, "id": "7110fd00-0000-4000-8000-000000000010", "name": "Merge — собрать ветки", "type": "n8n-nodes-base.merge", "typeVersion": 3.2, "position": [700, 0]}
+  ],
+  "connections": {
+    "Запуск вручную":{"main":[[{"node":"Отправление 1","type":"main","index":0},{"node":"Отправление 2","type":"main","index":0},{"node":"Отправление 3","type":"main","index":0}]]},
+    "Отправление 1":{"main":[[{"node":"Merge 1+2","type":"main","index":0}]]},
+    "Отправление 2":{"main":[[{"node":"Merge 1+2","type":"main","index":1}]]},
+    "Merge 1+2":{"main":[[{"node":"Merge +3","type":"main","index":0}]]},
+    "Отправление 3":{"main":[[{"node":"Merge +3","type":"main","index":1}]]},
+    "Merge +3":{"main":[[{"node":"IF — хрупкое?","type":"main","index":0}]]},
+    "IF — хрупкое?":{"main":[[{"node":"Бережная перевозка","type":"main","index":0}],[{"node":"Стандартная перевозка","type":"main","index":0}]]},
+    "Бережная перевозка":{"main":[[{"node":"Merge — собрать ветки","type":"main","index":0}]]},
+    "Стандартная перевозка":{"main":[[{"node":"Merge — собрать ветки","type":"main","index":1}]]}
+  },
+  "pinData": {}, "active": false, "settings": {"executionOrder":"v1"}, "versionId": "7110fd00-0000-4000-8000-00000000ffff", "meta": {"templateCredsSetupCompleted":true}, "tags": []
+}

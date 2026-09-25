@@ -1,0 +1,35 @@
+{
+  "name": "PEn04 — 05. Массивы, цикл, фильтр и статусы",
+  "nodes": [
+    {"parameters":{},"id":"9330fd00-0000-4000-8000-000000000001","name":"Запуск вручную","type":"n8n-nodes-base.manualTrigger","typeVersion":1,"position":[-900,0]},
+    {"parameters":{"jsCode":"return [{json:{clients:[\n{id:1,name:'Анна',city:'Москва',phone:'+7 900 000-00-01',status:'new'},\n{id:2,name:'Борис',city:'Казань',phone:'+7 900 000-00-02',status:'active'},\n{id:3,name:'Вера',city:'Самара',phone:'',status:'new'},\n{id:4,name:'Глеб',city:'Москва',phone:'+7 900 000-00-04',status:'blocked'},\n{id:5,name:'Дарья',city:'Омск',phone:'+7 900 000-00-05',status:'active'},\n{id:6,name:'Егор',city:'Пермь',phone:null,status:'new'},\n{id:7,name:'Жанна',city:'Тула',phone:'+7 900 000-00-07',status:'new'},\n{id:8,name:'Илья',city:'Москва',phone:'+7 900 000-00-08',status:'unknown'}\n]}}];"},"id":"9330fd00-0000-4000-8000-000000000002","name":"8 тестовых клиентов","type":"n8n-nodes-base.code","typeVersion":2,"position":[-680,0]},
+    {"parameters":{"fieldToSplitOut":"clients","options":{}},"id":"9330fd00-0000-4000-8000-000000000003","name":"Split Out — clients","type":"n8n-nodes-base.splitOut","typeVersion":1,"position":[-460,0]},
+    {"parameters":{"batchSize":2,"options":{}},"id":"9330fd00-0000-4000-8000-000000000004","name":"Loop Over Items — по 2","type":"n8n-nodes-base.splitInBatches","typeVersion":3,"position":[-220,0]},
+    {"parameters":{"assignments":{"assignments":[{"id":"g1","name":"greeting","value":"=Здравствуйте, {{ $json.name }}!","type":"string"}]},"includeOtherFields":true,"options":{}},"id":"9330fd00-0000-4000-8000-000000000005","name":"Edit Fields — приветствие","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[20,100]},
+    {"parameters":{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"id":"ph1","leftValue":"={{ $json.phone }}","rightValue":"","operator":{"type":"string","operation":"notEmpty","singleValue":true}}],"combinator":"and"},"options":{}},"id":"9330fd00-0000-4000-8000-000000000006","name":"Filter — есть телефон","type":"n8n-nodes-base.filter","typeVersion":2.2,"position":[260,100]},
+    {"parameters":{"rules":{"values":[{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"leftValue":"={{ $json.status }}","rightValue":"new","operator":{"type":"string","operation":"equals"}}],"combinator":"and"},"renameOutput":true,"outputKey":"new"},{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"leftValue":"={{ $json.status }}","rightValue":"active","operator":{"type":"string","operation":"equals"}}],"combinator":"and"},"renameOutput":true,"outputKey":"active"}]},"options":{"fallbackOutput":"extra","renameFallbackOutput":"other"}},"id":"9330fd00-0000-4000-8000-000000000007","name":"Switch — status","type":"n8n-nodes-base.switch","typeVersion":3.2,"position":[500,20]},
+    {"parameters":{"assignments":{"assignments":[{"id":"m1","name":"message","value":"=Добро пожаловать, {{ $json.name }}!","type":"string"},{"id":"m2","name":"category","value":"new","type":"string"}]},"includeOtherFields":true,"options":{}},"id":"9330fd00-0000-4000-8000-000000000008","name":"Сообщение new","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[740,-120]},
+    {"parameters":{"assignments":{"assignments":[{"id":"m3","name":"message","value":"={{ $json.name }}, рады видеть вас снова!","type":"string"},{"id":"m4","name":"category","value":"active","type":"string"}]},"includeOtherFields":true,"options":{}},"id":"9330fd00-0000-4000-8000-000000000009","name":"Сообщение active","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[740,20]},
+    {"parameters":{"assignments":{"assignments":[{"id":"m5","name":"message","value":"Требуется ручная проверка статуса","type":"string"},{"id":"m6","name":"category","value":"other","type":"string"}]},"includeOtherFields":true,"options":{}},"id":"9330fd00-0000-4000-8000-000000000010","name":"Запасная ветка","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[740,160]},
+    {"parameters":{"assignments":{"assignments":[{"id":"s1","name":"skipReason","value":"Нет телефона","type":"string"},{"id":"s2","name":"category","value":"skipped","type":"string"}]},"includeOtherFields":true,"options":{}},"id":"9330fd00-0000-4000-8000-000000000011","name":"Пометить пропущенным","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[500,300]},
+    {"parameters":{"mode":"append"},"id":"9330fd00-0000-4000-8000-000000000012","name":"Merge new + active","type":"n8n-nodes-base.merge","typeVersion":3.2,"position":[980,-60]},
+    {"parameters":{"mode":"append"},"id":"9330fd00-0000-4000-8000-000000000013","name":"Merge + other","type":"n8n-nodes-base.merge","typeVersion":3.2,"position":[1200,40]},
+    {"parameters":{"jsCode":"const rows = items.map(i => i.json);\nconst count = value => rows.filter(r => r.category === value).length;\nreturn [{json:{processed:rows.length,skipped:count('skipped'),new:count('new'),active:count('active'),other:count('other')}}];"},"id":"9330fd00-0000-4000-8000-000000000014","name":"Итоговая статистика","type":"n8n-nodes-base.code","typeVersion":2,"position":[20,-160]}
+  ],
+  "connections":{
+    "Запуск вручную":{"main":[[{"node":"8 тестовых клиентов","type":"main","index":0}]]},
+    "8 тестовых клиентов":{"main":[[{"node":"Split Out — clients","type":"main","index":0}]]},
+    "Split Out — clients":{"main":[[{"node":"Loop Over Items — по 2","type":"main","index":0}]]},
+    "Loop Over Items — по 2":{"main":[[{"node":"Итоговая статистика","type":"main","index":0}],[{"node":"Edit Fields — приветствие","type":"main","index":0}]]},
+    "Edit Fields — приветствие":{"main":[[{"node":"Filter — есть телефон","type":"main","index":0}]]},
+    "Filter — есть телефон":{"main":[[{"node":"Switch — status","type":"main","index":0}],[{"node":"Пометить пропущенным","type":"main","index":0}]]},
+    "Switch — status":{"main":[[{"node":"Сообщение new","type":"main","index":0}],[{"node":"Сообщение active","type":"main","index":0}],[{"node":"Запасная ветка","type":"main","index":0}]]},
+    "Сообщение new":{"main":[[{"node":"Merge new + active","type":"main","index":0}]]},
+    "Сообщение active":{"main":[[{"node":"Merge new + active","type":"main","index":1}]]},
+    "Merge new + active":{"main":[[{"node":"Merge + other","type":"main","index":0}]]},
+    "Запасная ветка":{"main":[[{"node":"Merge + other","type":"main","index":1}]]},
+    "Merge + other":{"main":[[{"node":"Loop Over Items — по 2","type":"main","index":0}]]},
+    "Пометить пропущенным":{"main":[[{"node":"Loop Over Items — по 2","type":"main","index":0}]]}
+  },
+  "pinData":{},"active":false,"settings":{"executionOrder":"v1"},"versionId":"9330fd00-0000-4000-8000-00000000ffff","meta":{"templateCredsSetupCompleted":true},"tags":[]
+}

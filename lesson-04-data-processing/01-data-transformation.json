@@ -1,0 +1,66 @@
+{
+  "name": "PEn04 — 01. Подготовка и трансформация данных",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5db2db00-34b2-41eb-9052-0f930b41e001",
+      "name": "Запуск вручную",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-620, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "f1", "name": "customerName", "value": "Анна", "type": "string"},
+            {"id": "f2", "name": "email", "value": "ANNA@EXAMPLE.COM", "type": "string"},
+            {"id": "f3", "name": "orderTotal", "value": 14990, "type": "number"},
+            {"id": "f4", "name": "receivedAt", "value": "2026-09-24T10:30:00+03:00", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "5db2db00-34b2-41eb-9052-0f930b41e002",
+      "name": "Edit Fields — исходные данные",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-380, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => ({ json: { ...item.json, email: item.json.email.trim().toLowerCase(), segment: item.json.orderTotal >= 10000 ? 'vip' : 'standard', greeting: `Здравствуйте, ${item.json.customerName}!` } }));"
+      },
+      "id": "5db2db00-34b2-41eb-9052-0f930b41e003",
+      "name": "Code — нормализация",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 0]
+    },
+    {
+      "parameters": {
+        "operation": "formatDate",
+        "date": "={{ $json.receivedAt }}",
+        "format": "yyyy-MM-dd HH:mm",
+        "outputFieldName": "receivedAtFormatted",
+        "options": {}
+      },
+      "id": "5db2db00-34b2-41eb-9052-0f930b41e004",
+      "name": "Date & Time — формат даты",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [140, 0]
+    }
+  ],
+  "connections": {
+    "Запуск вручную": {"main": [[{"node": "Edit Fields — исходные данные", "type": "main", "index": 0}]]},
+    "Edit Fields — исходные данные": {"main": [[{"node": "Code — нормализация", "type": "main", "index": 0}]]},
+    "Code — нормализация": {"main": [[{"node": "Date & Time — формат даты", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "5db2db00-34b2-41eb-9052-0f930b41efff",
+  "meta": {"templateCredsSetupCompleted": true},
+  "tags": []
+}
