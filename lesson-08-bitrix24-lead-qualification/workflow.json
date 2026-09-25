@@ -1,0 +1,380 @@
+{
+  "name": "CRM + ИИ: квалификация лида — БАЗОВАЯ версия, нативные AI-ноды (Битрикс24)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bitrix-new-lead-simple",
+        "options": {}
+      },
+      "id": "1bbf9146-cfbb-4516-bddc-adae8798cd48",
+      "name": "Bitrix24: новый лид",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        880,
+        1344
+      ],
+      "webhookId": "bitrix-new-lead-simple"
+    },
+    {
+      "parameters": {},
+      "id": "eea05ba6-0d55-4721-9631-4752c646d8dc",
+      "name": "Тестовый запуск",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ====== НАСТРОЙКИ: правим только здесь ======\nconst CFG = {\n  bitrix: 'https://your-portal.bitrix24.ru/rest/1/xxxxxxxx/', // входящий вебхук, со слэшем на конце\n  managerId: 1,          // ответственный менеджер\n  testLeadId: 0,         // ID лида для ручного запуска\n  onlyTestLeads: true,   // обрабатываем только лиды с [ТЕСТ] в названии\n  stopWords: ['seo', 'продвижение сайта', 'вакансия', 'бартер', 'рассылк', 'разместим рекламу'],\n  hotWords: ['срочно', 'сегодня', 'завтра', 'бюджет', 'договор', 'тендер', 'оплатим']\n};\n\nconst b = $input.first().json?.body ?? $input.first().json ?? {};\nconst leadId = Number(b?.data?.FIELDS?.ID ?? b?.leadId ?? CFG.testLeadId ?? 0);\n\nreturn [{ json: { cfg: CFG, leadId } }];\n"
+      },
+      "id": "6a2601ba-6400-4e0b-adf4-c433337554c0",
+      "name": "Настройки",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.cfg.bitrix }}crm.lead.get.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.leadId }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "08e610aa-ac78-4d5a-8ca8-dc88512a0f4e",
+      "name": "Bitrix: получить лид",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1312,
+        1440
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Очистка полей + проверка, можно ли обрабатывать + промпт для LLM\nconst cfg = $('Настройки').first().json.cfg;\nconst L = ($input.first().json || {}).result || {};\n\nconst clean = s => String(s ?? '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\nconst first = a => Array.isArray(a) && a.length ? String(a[0].VALUE || '').trim() : '';\n\nconst lead = {\n  id: Number(L.ID || 0),\n  title: clean(L.TITLE),\n  name: clean([L.NAME, L.LAST_NAME].filter(Boolean).join(' ')),\n  company: clean(L.COMPANY_TITLE),\n  phone: first(L.PHONE),\n  email: first(L.EMAIL).toLowerCase(),\n  text: clean(L.COMMENTS) || clean(L.SOURCE_DESCRIPTION)\n};\n\n// обязательные поля\nconst missing = [];\nif (!lead.name) missing.push('имя');\nif (!lead.phone && !lead.email) missing.push('телефон или e-mail');\nif (!lead.text || lead.text.length < 15) missing.push('описание запроса');\n\n// два предохранителя: учебный лид и защита от повторной обработки\nconst isTest = !cfg.onlyTestLeads || lead.title.includes('[ТЕСТ]');\nconst already = clean(L.COMMENTS).includes('[AI]');\nconst canProcess = isTest && already === false && lead.id > 0;\n\nconst prompt = [\n  'Заявка из CRM. Классифицируй её и предложи черновик ответа.',\n  'Имя: ' + (lead.name || '—'),\n  'Компания: ' + (lead.company || '—'),\n  'Контакты: ' + (lead.phone || lead.email || 'нет'),\n  'Текст: ' + (lead.text || '—'),\n  missing.length ? 'Не хватает данных: ' + missing.join(', ') : ''\n].filter(Boolean).join('\\n');\n\nconst system = 'Ты ассистент отдела продаж. Ты только классифицируешь заявку и пишешь черновик ответа — ' +\n  'ничего не отправляешь и не отказываешь клиенту. Ответь одним JSON без markdown: ' +\n  '{\"category\":\"target|potential|irrelevant|spam\",\"summary\":\"1-2 предложения для менеджера\",' +\n  '\"reply_draft\":\"черновик ответа клиенту, 3-5 предложений\"}. Не выдумывай факты о клиенте.';\n\nreturn [{ json: {\n  leadId: lead.id, lead, missing, canProcess,\n  skipReason: !isTest ? 'не учебный лид' : already ? 'уже обработан' : '',\n  systemPrompt: system,\n  userPrompt: prompt\n}}];\n"
+      },
+      "id": "4f449d68-7da6-4ff2-9e36-70949fe4cbc6",
+      "name": "Проверка лида",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.canProcess }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "8f79d269-bf1e-43c5-ac3a-2b6810cc141f",
+      "name": "Обрабатывать?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        1440
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3f455057-7b3c-4548-a1f2-b1d1faede923",
+      "name": "Стоп: дубль или боевой лид",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userPrompt }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.systemPrompt }}"
+            }
+          ]
+        }
+      },
+      "id": "5b5c2cf2-cf74-4ea2-b84a-6ba8a4cbbe1c",
+      "name": "AI: квалификация лида",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        1968,
+        1344
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.1
+        }
+      },
+      "id": "6649f05a-ef23-4863-9416-a95a2ecb6176",
+      "name": "Модель (OpenAI Chat Model)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2000,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// LLM предлагает — правила решают. Здесь считаются маршрут, приоритет и дедлайн.\nconst cfg = $('Настройки').first().json.cfg;\nconst d = $('Проверка лида').first().json;\nconst lead = d.lead;\n\n// 1. читаем ответ LLM, при мусоре работаем без него\nlet ai = null;\nconst raw = $json.text ?? $json.output ?? $json?.choices?.[0]?.message?.content ?? '';\ntry { ai = JSON.parse(String(raw).replace(/```json|```/g, '').trim()); } catch (e) {}\nconst aiOk = !!ai && ['target','potential','irrelevant','spam'].includes(String(ai.category).toLowerCase());\nconst category = aiOk ? String(ai.category).toLowerCase() : 'unknown';\n\n// 2. детерминированный скоринг\nconst hay = (lead.text + ' ' + lead.title).toLowerCase();\nconst isStop = cfg.stopWords.some(w => hay.includes(w));\nconst isHot  = cfg.hotWords.some(w => hay.includes(w));\n\nlet score = 0;\nif (category === 'target') score += 40;\nif (category === 'potential') score += 20;\nif (category === 'irrelevant' || category === 'spam') score -= 50;\nif (category === 'unknown') score += 20;   // сбой LLM не повод терять лид\nif (isHot) score += 20;\nif (lead.phone) score += 10;\nif (isStop) score -= 60;\n\n// 3. маршрут и приоритет\nconst route = d.missing.length ? 'НЕПОЛНЫЙ' : (isStop || score < 0) ? 'НЕРЕЛЕВАНТНЫЙ' : 'ЦЕЛЕВОЙ';\nconst priority = route !== 'ЦЕЛЕВОЙ' ? 'P3' : (score >= 60 ? 'P1' : score >= 30 ? 'P2' : 'P3');\nconst slaMin = { P1: 15, P2: 120, P3: 1440 }[priority];\nconst deadline = new Date(Date.now() + slaMin * 60000).toISOString();\n\n// 4. черновик: шаблон для неполных и нерелевантных, LLM — для целевых\nconst hi = 'Здравствуйте' + (lead.name ? ', ' + lead.name.split(' ')[0] : '') + '!';\nconst draft =\n  route === 'НЕПОЛНЫЙ'\n    ? hi + '\\nСпасибо за заявку. Чтобы ответить точно, не хватает данных: ' + d.missing.join(', ') +\n      '.\\nПодскажите, пожалуйста, эти детали — вернёмся с предложением в течение рабочего дня.'\n  : route === 'НЕРЕЛЕВАНТНЫЙ'\n    ? hi + '\\nСпасибо за обращение. Похоже, запрос выходит за рамки нашей работы. Менеджер проверит заявку и ответит, если сможем помочь.'\n  : (aiOk && ai.reply_draft) ? ai.reply_draft\n    : hi + '\\nСпасибо за заявку — менеджер свяжется с вами в ближайшее время.';\n\nconst summary = aiOk ? String(ai.summary || '') : 'LLM недоступна, квалификация по правилам.';\n\nconst task = [\n  'Маршрут: ' + route + ' | Приоритет: ' + priority + ' | Скоринг: ' + score,\n  'Резюме: ' + summary,\n  d.missing.length ? 'Не хватает полей: ' + d.missing.join(', ') : 'Все обязательные поля заполнены',\n  'Контакты: ' + (lead.phone || '—') + ' / ' + (lead.email || '—'),\n  !aiOk ? 'ВНИМАНИЕ: ответ LLM не распознан, проверьте вручную' : '',\n  '',\n  'ЧЕРНОВИК ОТВЕТА (клиенту НЕ отправлен, отправляет менеджер после проверки):',\n  draft\n].filter(Boolean).join('\\n');\n\nreturn [{ json: {\n  leadId: d.leadId, lead, route, priority, score, summary, draft, task, deadline, slaMin,\n  aiOk, missing: d.missing, managerId: cfg.managerId\n}}];\n"
+      },
+      "id": "9bfdccd9-8e8a-44af-a1da-73f8899c8540",
+      "name": "Правила и черновик",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').first().json.cfg.bitrix }}crm.lead.update.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.leadId, fields: { COMMENTS: '[AI] ' + $json.route + ' | ' + $json.priority + ' | скоринг ' + $json.score + '\\n' + $json.summary + '\\n\\n' + ($json.lead.text || ''), ASSIGNED_BY_ID: $json.managerId }, params: { REGISTER_SONET_EVENT: 'N' } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "77a54275-75d0-4e6a-91d7-519acc08c738",
+      "name": "Bitrix: обновить лид",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        1344
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').first().json.cfg.bitrix }}crm.activity.todo.add.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const d = $('Правила и черновик').first().json; return JSON.stringify({ ownerTypeId: 1, ownerId: d.leadId, title: '[' + d.priority + '] ' + d.route + ' — ' + (d.lead.name || ('лид #' + d.leadId)), description: d.task, deadline: d.deadline, responsibleId: d.managerId }); })() }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "3c78ecb4-af15-47e0-bb38-532336e8b96e",
+      "name": "Bitrix: задача менеджеру с черновиком",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        1344
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "content": "## Базовая версия: 10 нод\n\n1. Триггер — исходящий вебхук Битрикс24 (ONCRMLEADADD) или ручной запуск.\n2. **Настройки** — единственная нода, которую правит студент.\n3. Получаем лид → чистим поля → два предохранителя: только лиды с [ТЕСТ] и только необработанные.\n4. Нода **Basic LLM Chain** (раздел AI) + подключённая к ней снизу модель дают категорию, резюме и черновик. Маршрут, приоритет и SLA считает код.\n5. Результат: комментарий в карточке + задача менеджеру, внутри которой лежит черновик.\n\n**Человек в контуре** здесь максимально простой: n8n никогда не пишет клиенту. Менеджер видит черновик в задаче, правит и отправляет сам. Ни удаления, ни отказа, ни смены стадии автоматом не происходит.",
+        "height": 420,
+        "width": 520,
+        "color": 4
+      },
+      "id": "be1ea426-86fb-4293-9864-e4f64e56e77d",
+      "name": "Как это работает",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        832,
+        880
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Bitrix24: новый лид": {
+      "main": [
+        [
+          {
+            "node": "Настройки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Тестовый запуск": {
+      "main": [
+        [
+          {
+            "node": "Настройки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Настройки": {
+      "main": [
+        [
+          {
+            "node": "Bitrix: получить лид",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bitrix: получить лид": {
+      "main": [
+        [
+          {
+            "node": "Проверка лида",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Проверка лида": {
+      "main": [
+        [
+          {
+            "node": "Обрабатывать?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Обрабатывать?": {
+      "main": [
+        [
+          {
+            "node": "AI: квалификация лида",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Стоп: дубль или боевой лид",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: квалификация лида": {
+      "main": [
+        [
+          {
+            "node": "Правила и черновик",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Модель (OpenAI Chat Model)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI: квалификация лида",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Правила и черновик": {
+      "main": [
+        [
+          {
+            "node": "Bitrix: обновить лид",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bitrix: обновить лид": {
+      "main": [
+        [
+          {
+            "node": "Bitrix: задача менеджеру с черновиком",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6aaaa3c5-30b0-4339-a374-f95cb8891b83",
+  "meta": {
+    "instanceId": "21e5194fb4548d766b96ebd333779b8063508b9c6aadeed69cb0d8bbe7d15985"
+  },
+  "nodeGroups": [],
+  "id": "2MsY0SLNsJL6EZMc",
+  "tags": []
+}
