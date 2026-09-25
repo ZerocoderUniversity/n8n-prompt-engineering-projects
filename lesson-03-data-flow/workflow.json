@@ -1,0 +1,119 @@
+{
+  "name": "Урок 3 — Демо: поток данных между нодами",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b3ed15cd-ecca-4019-a4e6-c4f0cf68fe5f",
+      "name": "▶ Запуск вручную",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        672,
+        -304
+      ],
+      "notes": "Триггер — точка старта сценария. Нажимаем кнопку Run и всё начинается."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3e1ffd60-2afa-46c5-943b-6daefbb2d906",
+              "name": "name",
+              "value": "Анна",
+              "type": "string"
+            },
+            {
+              "id": "d6090a04-8873-4904-9423-37c9f9139f0b",
+              "name": "city",
+              "value": "Москва",
+              "type": "string"
+            },
+            {
+              "id": "eca18f2d-c552-4838-b0f9-8953231b20df",
+              "name": "course",
+              "value": "n8n Старт",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a0b54eb7-5ff7-4a1b-a6d3-6d4e09fcf205",
+      "name": "📋 Данные студента",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        -304
+      ],
+      "notes": "Нода Set — задаём данные вручную. Три поля: name, city, course. Это вход для следующей ноды."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущей ноды\nconst name = $input.first().json.name;\nconst city = $input.first().json.city;\nconst course = $input.first().json.course;\n\n// Собираем приветственное сообщение\nconst greeting = 'Привет, ' + name + '! Рады видеть тебя из ' + city + ' на курсе «' + course + '». Поехали! 🚀';\n\n// Возвращаем результат\nreturn [\n  {\n    json: {\n      name: name,\n      city: city,\n      course: course,\n      greeting: greeting\n    }\n  }\n];"
+      },
+      "id": "c423811e-5549-4cae-b22c-2eac151a0f7a",
+      "name": "✍️ Собираем приветствие",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -304
+      ],
+      "notes": "Нода Code — берёт данные из предыдущей ноды и собирает из них готовое сообщение. Поля name, city, course подставляются автоматически."
+    },
+    {
+      "parameters": {
+        "content": "## Описание ноды 2\nЗадаём данные студента вручную.\nТри поля: name, city, course.\nЧтобы поменять данные — редактировать здесь.",
+        "width": 256,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        848,
+        -128
+      ],
+      "typeVersion": 1,
+      "id": "4775383a-7fa4-4bbe-a58c-5040cf7617b5",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "▶ Запуск вручную": {
+      "main": [
+        [
+          {
+            "node": "📋 Данные студента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Данные студента": {
+      "main": [
+        [
+          {
+            "node": "✍️ Собираем приветствие",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0fb80f04-edaf-47ba-8e02-1a8d4e587966",
+  "meta": {
+    "instanceId": "21e5194fb4548d766b96ebd333779b8063508b9c6aadeed69cb0d8bbe7d15985"
+  },
+  "nodeGroups": [],
+  "id": "19NlGijyYqvWNQO6",
+  "tags": []
+}
