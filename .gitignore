@@ -1,0 +1,13 @@
+# Local n8n and environment files
+.env
+.env.*
+!.env.example
+credentials.json
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
