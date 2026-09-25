@@ -1,0 +1,615 @@
+{
+  "name": "Урок — Маршрутизатор LLM (нода OpenAI + GigaChat)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c6ca9946-a35b-4c4c-a064-46e4aa9ee5ab",
+      "name": "▶ Запуск",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1008,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "primary_model",
+              "value": "gpt",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "fallback_model",
+              "value": "gigachat",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "force_error_primary",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a4",
+              "name": "max_tries",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "a5",
+              "name": "gpt_model",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "giga_model",
+              "value": "GigaChat",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "system_prompt",
+              "value": "Ты классификатор обращений клиентов сервиса аренды автомобилей в Аликанте.\nВерни СТРОГО один JSON-объект без пояснений и без markdown-обёрток.\nСхема:\n{\n  \"category\": одна из [\"бронирование\",\"оплата\",\"страховка\",\"поломка\",\"продление\",\"жалоба\",\"другое\"],\n  \"urgency\": одна из [\"низкая\",\"средняя\",\"высокая\"],\n  \"summary\": строка до 200 символов,\n  \"needs_human\": true или false,\n  \"language\": \"ru\", \"es\" или \"en\"\n}\nНикаких других полей. Никакого текста вне JSON. Формат ответа: json.",
+              "type": "string"
+            },
+            {
+              "id": "a8",
+              "name": "price_gpt",
+              "value": 0.03,
+              "type": "number"
+            },
+            {
+              "id": "a9",
+              "name": "price_giga",
+              "value": 0.2,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6aeced4c-ecd6-42e9-a5a5-e47950c99db3",
+      "name": "⚙️ Настройки",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -800,
+        544
+      ],
+      "notes": "Единственное место, где меняется маршрут. Промпт общий для обеих моделей — иначе сравнение бессмысленно."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "RqUID",
+              "value": "=6f0b1291-c7f3-43c6-bb2e-9f3efb2dc98e"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "scope",
+              "value": "GIGACHAT_API_PERS"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 30000
+        }
+      },
+      "id": "b2257b60-3198-4290-9021-9a6ccc575b1d",
+      "name": "🔑 Токен GigaChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -608,
+        544
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Ключ — в кредах Header Auth (Authorization: Basic ...), не в схеме. Токен берём один раз до маршрутизации, живёт 30 минут."
+    },
+    {
+      "parameters": {
+        "jsCode": "// 10 обращений — один набор для обеих моделей.\n// expected_category проставлена человеком: без эталона сравнить модели нечем.\nconst cfg = $('⚙️ Настройки').first().json;\n\nconst cases = [\n  { request_id: 'R-001', expected_category: 'бронирование',\n    request_text: 'Хочу забронировать кабриолет на 12–16 сентября, получение в аэропорту Аликанте. Есть с автоматом?' },\n  { request_id: 'R-002', expected_category: 'оплата',\n    request_text: 'С карты списали депозит дважды: 400 евро и сразу ещё 400. Верните лишнее.' },\n  { request_id: 'R-003', expected_category: 'поломка',\n    request_text: 'Машина не заводится на парковке в Бенидорме, мигает индикатор аккумулятора. Вечер, я с ребёнком.' },\n  { request_id: 'R-004', expected_category: 'страховка',\n    request_text: 'Франшиза 900 евро распространяется на стёкла и колёса? Думаю, брать ли расширенную.' },\n  { request_id: 'R-005', expected_category: 'продление',\n    request_text: 'Задерживаемся на три дня. Можно продлить аренду до 22-го и оплатить онлайн?' },\n  { request_id: 'R-006', expected_category: 'жалоба',\n    request_text: 'Машину выдали грязной, в салоне запах сигарет, выдачи ждал 40 минут. Это никуда не годится.' },\n  { request_id: 'R-007', expected_category: 'бронирование',\n    request_text: 'Hola, necesito un coche del 3 al 7 de octubre en Alicante, recogida en el centro.' },\n  { request_id: 'R-008', expected_category: 'оплата',\n    request_text: 'Не приходит счёт на почту после оплаты. Нужен документ для бухгалтерии, платили картой юрлица.' },\n  { request_id: 'R-009', expected_category: 'поломка',\n    request_text: 'Небольшое ДТП на круговом, задели бампер. Никто не пострадал. Что делать по протоколу?' },\n  { request_id: 'R-010', expected_category: 'другое',\n    request_text: 'У вас есть детские кресла и можно ли выехать в Португалию на вашей машине?' },\n];\n\nreturn cases.map(c => ({ json: {\n  ...c,\n  model: cfg.primary_model,   // ← маршрут живёт в одном поле\n  attempt: 1,\n  _t0: Date.now(),\n}}));"
+      },
+      "id": "ed956dfc-4393-4a5d-a9e8-90b64e520a36",
+      "name": "📥 10 обращений",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        544
+      ],
+      "notes": "Одинаковый вход для обеих моделей — первая половина единого контракта. Поле model задаёт маршрут."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.model }}",
+              "rightValue": "gpt",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5754e0b5-00b9-45a8-a996-24a3f4830d9d",
+      "name": "🔀 Какая модель?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -176,
+        544
+      ],
+      "notes": "Развилка одна на весь сценарий. Резерв возвращается сюда же — новых веток не создаём."
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "={{ $('⚙️ Настройки').first().json.force_error_primary && $json.attempt === 1 ? 'gpt-такой-модели-нет' : $('⚙️ Настройки').first().json.gpt_model }}",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $('⚙️ Настройки').first().json.system_prompt }}",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.request_text }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "72d1c828-2db2-49cc-8c3c-0fd8f17e38e3",
+      "name": "🤖 GPT",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        48,
+        432
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "notes": "Штатная нода: ключ в кредах OpenAI, JSON Output включён. Simplify выключен — иначе в ответе не будет usage и стоимость станет нечем считать."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ Настройки').first().json.force_error_primary && $json.attempt === 1 ? 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions/СЛОМАНО' : 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('🔑 Токен GigaChat').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $('⚙️ Настройки').first().json.giga_model }}\",\n  \"temperature\": 0.1,\n  \"messages\": [\n    { \"role\": \"system\", \"content\": {{ JSON.stringify($('⚙️ Настройки').first().json.system_prompt) }} },\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.request_text) }} }\n  ]\n}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 60000
+        }
+      },
+      "id": "6fd30126-7058-46b4-a3dd-8a2690ee2627",
+      "name": "🤖 GigaChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        672
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "notes": "OAuth-токен, сертификат Минцифры, нет response_format. Разницу гасит следующая нода."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ОБЩАЯ СХЕМА + ПРОВЕРКА. Одна нода на оба поставщика и на обе попытки.\n// Всё детерминированно: LLM ничего здесь не решает.\nconst CATEGORIES = ['бронирование','оплата','страховка','поломка','продление','жалоба','другое'];\nconst URGENCY = ['низкая','средняя','высокая'];\nconst CAT_MAP = {\n  'booking':'бронирование','reservation':'бронирование','reserva':'бронирование','аренда':'бронирование',\n  'payment':'оплата','billing':'оплата','pago':'оплата','платеж':'оплата','платёж':'оплата','счет':'оплата','счёт':'оплата',\n  'insurance':'страховка','франшиза':'страховка','seguro':'страховка',\n  'damage':'поломка','breakdown':'поломка','accident':'поломка','дтп':'поломка','авария':'поломка','поломка_и_дтп':'поломка',\n  'extension':'продление','продление_аренды':'продление','prolongation':'продление',\n  'complaint':'жалоба','claim':'жалоба','queja':'жалоба',\n  'other':'другое','otro':'другое','прочее':'другое'\n};\nconst URG_MAP = {'low':'низкая','normal':'средняя','medium':'средняя','high':'высокая','critical':'высокая',\n  'urgent':'высокая','низкий':'низкая','средний':'средняя','высокий':'высокая','baja':'низкая','media':'средняя','alta':'высокая'};\n\nconst norm = s => String(s ?? '').trim().toLowerCase().replace(/\\s+/g,'_');\nconst toBool = v => typeof v === 'boolean' ? v\n  : ['true','yes','да','1','y'].includes(String(v ?? '').trim().toLowerCase());\nfunction mapCat(v){ const n = norm(v); if (CATEGORIES.includes(n)) return n; if (CAT_MAP[n]) return CAT_MAP[n];\n  for (const k of Object.keys(CAT_MAP)) if (n.includes(k)) return CAT_MAP[k]; return null; }\nfunction mapUrg(v){ const n = norm(v); return URGENCY.includes(n) ? n : (URG_MAP[n] || null); }\nfunction grabJson(text){\n  let t = String(text ?? '').trim().replace(/^```[a-zA-Z]*\\s*/,'').replace(/```\\s*$/,'').trim();\n  const a = t.indexOf('{'), b = t.lastIndexOf('}');\n  if (a === -1 || b === -1) return null;\n  try { return JSON.parse(t.slice(a, b + 1)); } catch(e){ return null; }\n}\n\nconst item = $input.item.json;\n\n// Контекст заявки: ответ модели не содержит ни request_id, ни эталона — берём из входа.\nfunction ctxFrom(name, minAttempt){\n  try {\n    const c = $(name).item;\n    if (c && c.json && (!minAttempt || Number(c.json.attempt || 1) >= minAttempt)) return c.json;\n  } catch(e) {}\n  return null;\n}\nconst ctx = ctxFrom('🔁 Переключение на резерв', 2) || ctxFrom('📥 10 обращений') || {};\nconst base = { ...ctx, ...(item.error !== undefined ? item : {}) };\n\n// Модель берём из СВОЕГО поля маршрута, а не из ответа API:\n// своё поле мы задали сами, а ответ может прийти без него или в неожиданном виде.\nconst raw = String(base.model || item.model || '');\nconst model = /gigachat/i.test(raw) ? 'gigachat' : (/gpt/i.test(raw) ? 'gpt' : 'unknown');\n\nconst common = {\n  request_id: base.request_id, expected_category: base.expected_category,\n  request_text: base.request_text, attempt: base.attempt || 1,\n  model, _t0: base._t0 || 0, _t_end: Date.now(),\n  _fallback_from: base._fallback_from || null,\n  _fallback_reason: base._fallback_reason || null,\n  _fallback_kind: base._fallback_kind || null,\n};\n\n// --- ошибка вызова: сеть, 404, 429, таймаут\nif (item.error !== undefined) {\n  const e = item.error;\n  return { json: { ...common,\n    category: null, urgency: null, summary: null, needs_human: null, language: null,\n    _valid: false, _fail_kind: 'transport',\n    _fail_reason: 'Ошибка вызова: ' + String(typeof e === 'string' ? e : (e?.message || JSON.stringify(e))).slice(0,200),\n    _fields_filled: 0, _tokens: 0 }};\n}\n\n// --- ответ пришёл: приводим к схеме.\n// Два возможных формата: сырой ответ API (choices[]) и упрощённый вывод ноды OpenAI (message).\nlet content = item?.choices?.[0]?.message?.content;\nif (content === undefined) content = item?.message?.content;\nconst u = item?.usage || {};\n// нода OpenAI в режиме JSON отдаёт уже разобранный объект — парсить нечего\nconst p = (content && typeof content === 'object') ? content : grabJson(content);\n\nif (!p) {\n  return { json: { ...common,\n    category: null, urgency: null, summary: null, needs_human: null, language: null,\n    _valid: false, _fail_kind: 'format',\n    _fail_reason: 'Модель вернула не JSON: ' + String(content ?? '').slice(0,120),\n    _fields_filled: 0, _tokens: Number(u.total_tokens || 0) }};\n}\n\nconst out = {\n  category: mapCat(p.category),\n  urgency: mapUrg(p.urgency),\n  summary: p.summary ? String(p.summary).trim().slice(0,300) : null,\n  needs_human: p.needs_human !== undefined ? toBool(p.needs_human) : null,\n  language: p.language ? String(p.language).trim().toLowerCase().slice(0,5) : null,\n};\n\n// --- валидация схемы\nconst errors = [];\nif (!out.category) errors.push('category вне схемы');\nif (!out.urgency) errors.push('urgency вне схемы');\nif (typeof out.needs_human !== 'boolean') errors.push('needs_human не boolean');\nif (!out.summary || out.summary.length < 5) errors.push('summary пусто');\nif (!out.language) errors.push('language пусто');\n\nreturn { json: { ...common, ...out,\n  _valid: errors.length === 0,\n  _fail_kind: errors.length ? 'schema' : null,\n  _fail_reason: errors.length ? errors.join('; ') : null,\n  _fields_filled: Object.values(out).filter(v => v !== null && v !== '').length,\n  _tokens: Number(u.total_tokens || 0) }};"
+      },
+      "id": "b17f48b4-d24d-42a6-9d28-46d39df6104b",
+      "name": "🧩 Общая схема + проверка",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        544
+      ],
+      "notes": "Единственная нода, знающая про особенности поставщиков. Ниже по потоку — одна схема."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $json._valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "d2",
+              "leftValue": "={{ $json.attempt }}",
+              "rightValue": "={{ $('⚙️ Настройки').first().json.max_tries }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "de065731-2f45-4a56-80da-0de3c4bf236a",
+      "name": "🔀 Готово или попытки кончились?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        544
+      ],
+      "notes": "Выход из петли. Условие ИЛИ: либо контракт выполнен, либо попытки исчерпаны. Без второго условия петля станет бесконечной."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Переключение на резерв. Причина фиксируется всегда: переключение без причины — потерянный инцидент.\nconst d = $input.item.json;\n// Моделей две, значит резерв — всегда «вторая». Никаких таблиц маршрутизации.\nconst next = d.model === 'gpt' ? 'gigachat' : 'gpt';\n\nreturn { json: {\n  request_id: d.request_id,\n  expected_category: d.expected_category,\n  request_text: d.request_text,\n  model: next,\n  attempt: (d.attempt || 1) + 1,\n  _t0: Date.now(),\n  _fallback_from: d.model,\n  _fallback_kind: d._fail_kind,\n  _fallback_reason: d._fail_reason,\n  _fallback_at: new Date().toISOString(),\n}};"
+      },
+      "id": "c0a69745-50a0-4694-9d32-5ba44ec698e1",
+      "name": "🔁 Переключение на резерв",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        800
+      ],
+      "notes": "Меняет одно поле — model — и возвращает заявку в ту же развилку. Никаких дублей веток."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ИТОГ: чистый контракт + техническая мета. Сюда приходит и успех, и исчерпанные попытки.\nconst d = $input.item.json;\nconst failed = d._valid !== true;\n\nreturn { json: {\n  request_id: d.request_id,\n  category: failed ? 'другое' : d.category,\n  urgency: failed ? 'высокая' : d.urgency,\n  summary: failed ? 'Автоклассификация не удалась, нужен ручной разбор' : d.summary,\n  needs_human: failed ? true : d.needs_human,\n  language: failed ? 'ru' : d.language,\n  _meta: {\n    model: failed && d._fallback_from ? d.model : d.model,\n    attempt: d.attempt || 1,\n    degraded: failed,\n    valid: !failed,\n    fields_filled: d._fields_filled ?? 0,\n    expected_category: d.expected_category || null,\n    category_match: d.expected_category ? (d.category === d.expected_category) : null,\n    tokens: d._tokens || 0,\n    ms: (d._t_end && d._t0) ? (d._t_end - d._t0) : null,\n    fail_kind: d._fail_kind || null,\n    fail_reason: d._fail_reason || null,\n    fallback_from: d._fallback_from || null,\n    fallback_kind: d._fallback_kind || null,\n    fallback_reason: d._fallback_reason || null,\n  }\n}};"
+      },
+      "id": "52bbb41d-7394-45fb-92b7-c91791071943",
+      "name": "📦 Итог",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        464
+      ],
+      "notes": "Если не справилась ни одна модель — схема та же, но degraded = true и заявка уходит оператору."
+    },
+    {
+      "parameters": {
+        "jsCode": "// СРАВНИТЕЛЬНЫЙ ОТЧЁТ. Вся арифметика в коде — ни один показатель не считает LLM.\nconst cfg = $('⚙️ Настройки').first().json;\nconst items = $input.all().map(i => i.json);\nconst PRICE = { gpt: cfg.price_gpt, gigachat: cfg.price_giga };\n\nconst stat = {};\nconst bucket = m => stat[m] = stat[m] || { model: m, calls: 0, valid: 0,\n  format_err: 0, transport_err: 0, fields: 0, match: 0, checked: 0, tokens: 0, ms: 0 };\n\nfor (const it of items) {\n  const m = it._meta;\n\n  // успешная (последняя) попытка\n  const b = bucket(m.model);\n  b.calls += 1;\n  if (m.valid) b.valid += 1;\n  if (m.fail_kind === 'format' || m.fail_kind === 'schema') b.format_err += 1;\n  if (m.fail_kind === 'transport') b.transport_err += 1;\n  b.fields += m.fields_filled; b.tokens += m.tokens; b.ms += (m.ms || 0);\n  if (m.category_match !== null) { b.checked += 1; if (m.category_match) b.match += 1; }\n\n  // провалившаяся основная попытка — иначе доля ошибок окажется занижена\n  if (m.fallback_from) {\n    const f = bucket(m.fallback_from);\n    f.calls += 1;\n    if (m.fallback_kind === 'transport') f.transport_err += 1; else f.format_err += 1;\n    if (m.expected_category) f.checked += 1;\n  }\n}\n\nconst pct = (a, b) => b ? Math.round((a / b) * 1000) / 10 : null;\n\nconst по_моделям = Object.values(stat).map(b => ({\n  модель: b.model,\n  вызовов: b.calls,\n  'валидных_%': pct(b.valid, b.calls),\n  'полнота_полей_%': pct(b.fields, b.calls * 5),\n  'совпадение_категории_%': pct(b.match, b.checked),\n  'ошибки_формата_%': pct(b.format_err, b.calls),\n  'ошибки_вызова_%': pct(b.transport_err, b.calls),\n  'среднее_время_мс': b.calls ? Math.round(b.ms / b.calls) : null,\n  токенов: b.tokens,\n  'стоимость_руб': Math.round((b.tokens / 1000) * (PRICE[b.model] || 0) * 10000) / 10000,\n}));\n\nconst fb = items.filter(i => i._meta.fallback_from);\n\nreturn [{ json: {\n  всего_заявок: items.length,\n  основная: cfg.primary_model,\n  резервная: cfg.fallback_model,\n  переключений: fb.length,\n  причины: fb.map(i => ({ request_id: i.request_id, из: i._meta.fallback_from, в: i._meta.model,\n                          тип: i._meta.fallback_kind, причина: String(i._meta.fallback_reason || '').slice(0,140) })),\n  ушло_оператору: items.filter(i => i._meta.degraded).length,\n  по_моделям,\n  оговорка: 'Тарифы условные, задаются в настройках. Выводы верны только для этого набора из 10 заявок.',\n}}];"
+      },
+      "id": "94550475-a85a-4bed-8132-f20e2069ee8b",
+      "name": "📊 Отчёт",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        464
+      ],
+      "notes": "Полнота полей, соответствие категории, время, стоимость, доля ошибок формата — на одном наборе данных."
+    },
+    {
+      "parameters": {
+        "content": "## 🎯 Маршрутизатор LLM\n\nАвтоматизация строится вокруг **контракта данных**, а не вокруг интерфейса одной модели.\n\n**Не меняется при замене LLM:**\nвходные поля, JSON-схема результата, валидация, отчётность.\n\n**Меняется:** только нода вызова и таблица соответствий в адаптере.\n\n**Общая схема результата:**\n```\ncategory    — 7 значений\nurgency     — низкая|средняя|высокая\nsummary     — до 200 символов\nneeds_human — boolean\nlanguage    — ru|es|en\n```\nПромпт лежит в `⚙️ Настройках` в одном экземпляре и уходит в обе модели без изменений.",
+        "height": 520,
+        "width": 320,
+        "color": 4
+      },
+      "id": "794507a0-6fbb-49d1-809d-04c3b2cdbc5c",
+      "name": "Sticky 12",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1296,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ Где модели расходятся\n\n| | GPT | GigaChat |\n|---|---|---|\n| Вызов | штатная нода | HTTP Request руками |\n| Ключ | креды OpenAI | OAuth: ключ → токен на 30 мин |\n| Сертификат | обычный | Минцифры → `allowUnauthorizedCerts` |\n| Строгий JSON | галочка JSON Output | нет, только просьба в промпте |\n\n**Вот она, привязка к поставщику, в чистом виде:** у одной модели готовая нода в две настройки, у другой — четыре ноды ручной работы. Уйдёт OpenAI — уйдёт и нода.\n\nФорма ответа при выключенном Simplify у обеих одинаковая: `choices[0].message.content` + `usage`. На этом совпадении и держится одна общая нода нормализации.",
+        "height": 640,
+        "width": 380,
+        "color": 3
+      },
+      "id": "81606242-0fc8-436b-a068-be7be4dc9d6c",
+      "name": "Sticky 13",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        112,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔁 Резерв — это петля, а не вторая половина схемы\n\nЗаявка возвращается в **ту же развилку** с изменённым полем `model`. Веток не прибавляется.\n\n**Повтор ≠ переключение:**\n- `retryOnFail` (2 попытки) — та же модель, лечит сеть и 429\n- переключение — другая модель, только после того как повторы не помогли\n\nВыход из петли — условие **ИЛИ** в ноде `🔀 Готово...`: контракт выполнен **или** `attempt >= max_tries`.\n\nУберите второе условие — получите бесконечный круг и счёт за токены. Покажите это студентам явно.",
+        "height": 544,
+        "width": 380,
+        "color": 6
+      },
+      "id": "4cf10b5f-9c4d-4058-a8f2-18dc45c8fafa",
+      "name": "Sticky 14",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        432,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🧪 Демо переключения\n\n1. `⚙️ Настройки` → `force_error_primary` = **true**\n2. Run\n\nОсновной маршрут получит 404, отработает повторы, запишет причину и уйдёт в резерв. В `📊 Отчёте` появится блок `причины`.\n\nОшибка вызывается сломанным URL, а не подменой результата — виден настоящий путь ошибки.\n\n---\n\n## ⚖️ Выбор основной модели\n\nКачество русского · соответствие категории · доступность и юрограничения · стоимость · стабильность.\n\n❌ «Модель X лучше Y» без теста на ваших данных — это маркетинг. Ваши 10 заявок весят больше любой таблицы из интернета.",
+        "height": 520,
+        "width": 360,
+        "color": 5
+      },
+      "id": "af5c39e9-e2b7-44cc-b19c-72b632d2764b",
+      "name": "Sticky 15",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        912,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔧 Ключи — только в Credentials\n\n**Нода `🤖 GPT`**\nCredential to connect with → Create new → **OpenAi account** → API Key: `sk-...`\n\n**Нода `🔑 Токен GigaChat`**\nAuthentication → Generic Credential Type → **Header Auth** → Create new\nName: `Authorization`\nValue: `Basic <ключ с developers.sber.ru>`\n\nScope в теле ноды: `GIGACHAT_API_PERS` (физлицо) или `GIGACHAT_API_B2B` (юрлицо).\n\nНода `🤖 GigaChat` кредов не требует — подставляет токен выражением.\n\n⚠️ В самой схеме ключей нет и быть не должно: воркфлоу выгружается в JSON и уезжает в репозиторий целиком.\n\n**Тарифы** в настройках условные — подставьте свои.",
+        "height": 628,
+        "width": 340,
+        "color": 7
+      },
+      "id": "49a9b21b-20d9-4c08-94cb-ad906ba8a3d1",
+      "name": "Sticky 16",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -288
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "▶ Запуск": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Настройки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Настройки": {
+      "main": [
+        [
+          {
+            "node": "🔑 Токен GigaChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔑 Токен GigaChat": {
+      "main": [
+        [
+          {
+            "node": "📥 10 обращений",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 10 обращений": {
+      "main": [
+        [
+          {
+            "node": "🔀 Какая модель?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Какая модель?": {
+      "main": [
+        [
+          {
+            "node": "🤖 GPT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🤖 GigaChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 GPT": {
+      "main": [
+        [
+          {
+            "node": "🧩 Общая схема + проверка",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧩 Общая схема + проверка",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 GigaChat": {
+      "main": [
+        [
+          {
+            "node": "🧩 Общая схема + проверка",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧩 Общая схема + проверка",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧩 Общая схема + проверка": {
+      "main": [
+        [
+          {
+            "node": "🔀 Готово или попытки кончились?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Готово или попытки кончились?": {
+      "main": [
+        [
+          {
+            "node": "📦 Итог",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔁 Переключение на резерв",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Переключение на резерв": {
+      "main": [
+        [
+          {
+            "node": "🔀 Какая модель?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📦 Итог": {
+      "main": [
+        [
+          {
+            "node": "📊 Отчёт",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "4ee9a4cd-1707-435f-8d5d-d59559fb25bc",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "21e5194fb4548d766b96ebd333779b8063508b9c6aadeed69cb0d8bbe7d15985"
+  },
+  "nodeGroups": [],
+  "id": "ixqYHLDdaGNeoZUo",
+  "tags": []
+}
